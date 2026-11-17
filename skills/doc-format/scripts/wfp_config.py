@@ -36,6 +36,7 @@ DEFAULT_CONFIG = {
     'left_indent_cm': 0.0, 'right_indent_cm': 0.0,
     'paragraph_indent_unit': 'cm',
     'left_indent_chars': 0.0, 'right_indent_chars': 0.0, 'first_line_indent_chars': 2.0,
+    'preserve_zero_indent': False,
     'title_bold': 'preserve', 'subtitle_bold': 'preserve',
     'h1_bold': 'preserve', 'h2_bold': 'preserve', 'attachment_bold': 'preserve',
     'set_outline': True, 'enable_attachment_formatting': True,

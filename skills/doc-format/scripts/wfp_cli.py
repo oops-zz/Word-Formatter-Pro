@@ -110,6 +110,7 @@ CONFIG_DESCRIPTIONS = {
     "left_indent_chars": ("段落左缩进", "字符；paragraph_indent_unit=chars 时使用"),
     "right_indent_chars": ("段落右缩进", "字符；paragraph_indent_unit=chars 时使用"),
     "first_line_indent_chars": ("首行缩进", "字符；默认 2"),
+    "preserve_zero_indent": ("保留源文档顶格段落", "true/false，默认 false；关闭时正文统一补首行缩进"),
     "title_bold": ("题目加粗", "preserve / bold / normal；保留原样 / 加粗 / 不加粗"),
     "subtitle_bold": ("副标题加粗", "preserve / bold / normal"),
     "h1_bold": ("一级标题加粗", "preserve / bold / normal；旧 true/false 对应 bold/preserve"),
