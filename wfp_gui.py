@@ -166,6 +166,7 @@ class WordFormatterGUI:
         self.enable_table_var = tk.BooleanVar(value=self.default_params['enable_table_formatting'])
         self.table_auto_col_width_var = tk.BooleanVar(value=self.default_params['table_auto_col_width'])
         self.table_remove_wrapping_var = tk.BooleanVar(value=self.default_params['table_remove_text_wrapping'])
+        self.preserve_zero_indent_var = tk.BooleanVar(value=self.default_params['preserve_zero_indent'])
         self.enable_title_after_spacing_var = tk.BooleanVar(value=False)
         self.enable_attachment_title_after_spacing_var = tk.BooleanVar(value=False)
         self.title_after_mode_var = tk.StringVar(value='空一行')
@@ -878,6 +879,9 @@ class WordFormatterGUI:
         row += 1
         row = create_section_header(body_frame, "段落缩进", None, row)
         row = create_indent_controls(body_frame, row)
+        ttk.Checkbutton(body_frame, text="保留源文档顶格段落（不补首行缩进）",
+                        variable=self.preserve_zero_indent_var).grid(
+            row=row, column=0, columnspan=4, sticky=tk.W, padx=3, pady=1)
         row += 1
         global_row = row
         row = 0
@@ -1140,6 +1144,7 @@ class WordFormatterGUI:
         self.enable_table_var.set(loaded_config.get('enable_table_formatting', False))
         self.table_auto_col_width_var.set(loaded_config.get('table_auto_col_width', True))
         self.table_remove_wrapping_var.set(loaded_config.get('table_remove_text_wrapping', False))
+        self.preserve_zero_indent_var.set(loaded_config.get('preserve_zero_indent', False))
         self.enable_title_after_spacing_var.set(bool(loaded_config.get('enable_title_after_spacing', False)
                                                      or loaded_config.get('enable_title_after_blank_line', False)))
         self.enable_attachment_title_after_spacing_var.set(bool(loaded_config.get('enable_attachment_title_after_spacing', False)
@@ -1155,6 +1160,7 @@ class WordFormatterGUI:
             'use_custom_english_font', 'use_times_new_roman',
             'remove_blank_lines', 'normalize_punctuation',
             'enable_table_formatting', 'table_auto_col_width', 'table_remove_text_wrapping',
+            'preserve_zero_indent',
             'enable_title_after_spacing', 'enable_attachment_title_after_spacing',
             'enable_title_after_blank_line', 'enable_attachment_title_after_blank_line',
             'enable_signature_formatting', 'signature_include_attachments', 'signature_normalize_date',
@@ -1208,6 +1214,7 @@ class WordFormatterGUI:
         config['enable_table_formatting'] = self.enable_table_var.get()
         config['table_auto_col_width'] = self.table_auto_col_width_var.get()
         config['table_remove_text_wrapping'] = self.table_remove_wrapping_var.get()
+        config['preserve_zero_indent'] = self.preserve_zero_indent_var.get()
         for scope, enabled, mode in (
                 ('title', self.enable_title_after_spacing_var.get(), self.title_after_mode_var.get()),
                 ('attachment_title', self.enable_attachment_title_after_spacing_var.get(), self.attachment_after_mode_var.get())):

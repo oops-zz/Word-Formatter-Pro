@@ -593,6 +593,180 @@ class SpacingAndIndentUnitTests(unittest.TestCase):
         self.assertIs(field.getparent(), para.runs[0]._r)
 
 
+class FirstLineIndentReadingTests(unittest.TestCase):
+    """首行缩进必须能从字符/缇/样式链上可靠读出（python-docx 只读 w:firstLine）。"""
+
+    @staticmethod
+    def _ind(para):
+        return para._p.get_or_add_pPr().get_or_add_ind()
+
+    def test_character_first_line_indent_reports_characters(self):
+        doc = Document()
+        para = doc.add_paragraph('正文')
+        self._ind(para).set(qn('w:firstLineChars'), '200')
+        processor = WordProcessor(DEFAULT_CONFIG.copy())
+        self.assertAlmostEqual(processor._first_line_indent_chars(para), 2.0)
+
+    def test_twip_first_line_indent_is_converted_by_font_size(self):
+        doc = Document()
+        para = doc.add_paragraph('正文')
+        self._ind(para).set(qn('w:firstLine'), '420')
+        processor = WordProcessor(DEFAULT_CONFIG.copy())
+        self.assertAlmostEqual(processor._first_line_indent_chars(para, font_size_pt=10.5), 2.0, places=3)
+
+    def test_hanging_indent_reports_negative_characters(self):
+        doc = Document()
+        para = doc.add_paragraph('正文')
+        self._ind(para).set(qn('w:hangingChars'), '150')
+        processor = WordProcessor(DEFAULT_CONFIG.copy())
+        self.assertAlmostEqual(processor._first_line_indent_chars(para), -1.5)
+
+    def test_style_level_indent_is_detected_without_direct_formatting(self):
+        doc = Document()
+        style = doc.styles.add_style('BodyIndentStyle', 1)
+        style.paragraph_format.first_line_indent = Pt(16)
+        para = doc.add_paragraph('正文', style='BodyIndentStyle')
+        self.assertIsNone(para.paragraph_format.first_line_indent)
+        processor = WordProcessor(DEFAULT_CONFIG.copy())
+        self.assertAlmostEqual(processor._first_line_indent_chars(para, font_size_pt=16), 1.0, places=3)
+
+    def test_flush_left_paragraph_reports_zero(self):
+        doc = Document()
+        para = doc.add_paragraph('正文')
+        processor = WordProcessor(DEFAULT_CONFIG.copy())
+        self.assertEqual(processor._first_line_indent_chars(para), 0.0)
+
+
+class BodyIndentApplicationTests(unittest.TestCase):
+    """回归：字符单位 + 首行 2 字符时，正文段落要统一套用配置缩进。"""
+
+    def _format(self, root, build, overrides=None):
+        source = root / 'source.docx'
+        doc = Document()
+        build(doc)
+        doc.save(source)
+        config = DEFAULT_CONFIG.copy()
+        config.update({
+            'paragraph_indent_unit': 'chars',
+            'first_line_indent_chars': 2,
+            'enable_attachment_formatting': False,
+            'set_outline': True,
+        })
+        config.update(overrides or {})
+        processor = WordProcessor(config, remove_blank_lines=False)
+        output = root / 'out.docx'
+        try:
+            processor.format_document(str(source), str(output))
+            return Document(output)
+        finally:
+            processor._cleanup_temp_files()
+
+    @staticmethod
+    def _first_line_chars(para):
+        p_pr = para._p.pPr
+        ind = p_pr.find(qn('w:ind')) if p_pr is not None else None
+        return None if ind is None else ind.get(qn('w:firstLineChars'))
+
+    @staticmethod
+    def _find(doc, prefix):
+        for para in doc.paragraphs:
+            if para.text.strip().startswith(prefix):
+                return para
+        raise AssertionError(f'未找到段落: {prefix}')
+
+    def test_body_paragraph_without_source_indent_gets_two_char_indent(self):
+        def build(doc):
+            doc.add_paragraph('一、测试章节')
+            doc.add_paragraph('这是源文档顶格的正文段落。')
+
+        with tempfile.TemporaryDirectory(prefix='wfp_indent_test_') as tmpdir:
+            formatted = self._format(Path(tmpdir), build)
+        para = self._find(formatted, '这是源文档顶格')
+        self.assertEqual(self._first_line_chars(para), '200')
+
+    def test_preserve_zero_indent_switch_keeps_flush_left_paragraph(self):
+        def build(doc):
+            doc.add_paragraph('一、测试章节')
+            doc.add_paragraph('这是源文档顶格的正文段落。')
+
+        with tempfile.TemporaryDirectory(prefix='wfp_indent_test_') as tmpdir:
+            formatted = self._format(Path(tmpdir), build, {'preserve_zero_indent': True})
+        para = self._find(formatted, '这是源文档顶格')
+        self.assertIsNone(self._first_line_chars(para))
+
+    def test_character_indented_paragraph_counts_as_indented_for_preserve_switch(self):
+        def build(doc):
+            doc.add_paragraph('一、测试章节')
+            para = doc.add_paragraph('这是源文档用字符缩进的正文段落。')
+            para._p.get_or_add_pPr().get_or_add_ind().set(qn('w:firstLineChars'), '200')
+
+        with tempfile.TemporaryDirectory(prefix='wfp_indent_test_') as tmpdir:
+            formatted = self._format(Path(tmpdir), build, {'preserve_zero_indent': True})
+        para = self._find(formatted, '这是源文档用字符缩进')
+        self.assertEqual(self._first_line_chars(para), '200')
+
+    def test_leading_spaces_over_five_are_stripped_and_indented(self):
+        def build(doc):
+            doc.add_paragraph('一、测试章节')
+            doc.add_paragraph('      这是六个半角空格开头的正文段落。')
+
+        with tempfile.TemporaryDirectory(prefix='wfp_indent_test_') as tmpdir:
+            formatted = self._format(Path(tmpdir), build)
+        para = self._find(formatted, '这是六个半角空格开头')
+        self.assertEqual(para.text.strip(), '这是六个半角空格开头的正文段落。')
+        self.assertEqual(self._first_line_chars(para), '200')
+
+    def test_centered_main_title_drops_character_first_line_indent(self):
+        def build(doc):
+            title = doc.add_paragraph('测试公文标题')
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title._p.get_or_add_pPr().get_or_add_ind().set(qn('w:firstLineChars'), '200')
+            doc.add_paragraph('一、测试章节')
+            doc.add_paragraph('这是正文段落。')
+
+        with tempfile.TemporaryDirectory(prefix='wfp_indent_test_') as tmpdir:
+            formatted = self._format(Path(tmpdir), build)
+        title = self._find(formatted, '测试公文标题')
+        self.assertIsNone(self._first_line_chars(title))
+
+
+    def test_centered_body_paragraph_keeps_alignment_without_forced_indent(self):
+        def build(doc):
+            doc.add_paragraph('一、测试章节')
+            para = doc.add_paragraph('这是居中的图表说明文字。')
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        with tempfile.TemporaryDirectory(prefix='wfp_indent_test_') as tmpdir:
+            formatted = self._format(Path(tmpdir), build)
+        para = self._find(formatted, '这是居中的图表说明文字')
+        self.assertEqual(para.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+        self.assertIsNone(self._first_line_chars(para))
+
+    def test_hanging_indent_paragraph_is_normalized_to_configured_indent(self):
+        def build(doc):
+            doc.add_paragraph('一、测试章节')
+            para = doc.add_paragraph('这是源文档悬挂缩进的正文段落。')
+            para._p.get_or_add_pPr().get_or_add_ind().set(qn('w:hanging'), '420')
+
+        with tempfile.TemporaryDirectory(prefix='wfp_indent_test_') as tmpdir:
+            formatted = self._format(Path(tmpdir), build)
+        para = self._find(formatted, '这是源文档悬挂缩进')
+        ind = para._p.pPr.find(qn('w:ind'))
+        self.assertEqual(ind.get(qn('w:firstLineChars')), '200')
+        self.assertIsNone(ind.get(qn('w:hanging')))
+
+    def test_preserve_zero_indent_still_indents_leading_space_paragraphs(self):
+        def build(doc):
+            doc.add_paragraph('一、测试章节')
+            doc.add_paragraph('      这是六个半角空格开头的正文段落。')
+
+        with tempfile.TemporaryDirectory(prefix='wfp_indent_test_') as tmpdir:
+            formatted = self._format(Path(tmpdir), build, {'preserve_zero_indent': True})
+        para = self._find(formatted, '这是六个半角空格开头')
+        self.assertEqual(para.text.strip(), '这是六个半角空格开头的正文段落。')
+        self.assertEqual(self._first_line_chars(para), '200')
+
+
 class TempAndConversionTests(unittest.TestCase):
     def test_temp_docx_path_uses_system_temp_and_safe_name(self):
         processor = WordProcessor(DEFAULT_CONFIG.copy())

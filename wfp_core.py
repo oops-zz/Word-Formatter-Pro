@@ -127,7 +127,7 @@ def normalize_format_options(config):
                 raise ValueError(f'{blank_key} 必须为 true 或 false')
         if result.get(blank_key, False):
             result['enable_' + scope + '_after_spacing'] = False
-    for key in ('enable_signature_formatting', 'signature_include_attachments', 'signature_normalize_date'):
+    for key in ('preserve_zero_indent', 'enable_signature_formatting', 'signature_include_attachments', 'signature_normalize_date'):
         if key in result:
             if result[key] is None:
                 result.pop(key)
@@ -1336,6 +1336,97 @@ class WordProcessor:
 
         para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
+    @staticmethod
+    def _indent_elements(para):
+        """首行缩进来源元素，按直接格式 → 样式链 → 文档默认的顺序返回。"""
+        elements = []
+        p_pr = para._p.pPr
+        if p_pr is not None:
+            ind = p_pr.find(qn('w:ind'))
+            if ind is not None:
+                elements.append(ind)
+        seen = set()
+        try:
+            style = para.style
+        except (KeyError, ValueError, AttributeError):
+            style = None
+        while style is not None and id(style.element) not in seen:
+            seen.add(id(style.element))
+            style_p_pr = style.element.find(qn('w:pPr'))
+            if style_p_pr is not None:
+                ind = style_p_pr.find(qn('w:ind'))
+                if ind is not None:
+                    elements.append(ind)
+            style = style.base_style
+        try:
+            document_p_pr = para.part.document.styles.element.find(
+                qn('w:docDefaults') + '/' + qn('w:pPrDefault') + '/' + qn('w:pPr'))
+        except AttributeError:
+            document_p_pr = None
+        if document_p_pr is not None:
+            ind = document_p_pr.find(qn('w:ind'))
+            if ind is not None:
+                elements.append(ind)
+        return elements
+
+    def _indent_font_size_pt(self, para, font_size_pt=None):
+        """换算字符缩进所用的字号：1 字符宽 = 该字号的一个汉字宽。"""
+        if font_size_pt:
+            return float(font_size_pt)
+        _, run_size = self._get_paragraph_font_info(para)
+        if run_size:
+            return float(run_size)
+        seen = set()
+        try:
+            style = para.style
+        except (KeyError, ValueError, AttributeError):
+            style = None
+        while style is not None and id(style.element) not in seen:
+            seen.add(id(style.element))
+            if style.font.size is not None:
+                return float(style.font.size.pt)
+            style = style.base_style
+        return self._config_float(self.config, 'body_size', 12.0)
+
+    def _first_line_indent_chars(self, para, font_size_pt=None):
+        """首行缩进的字符数；负数表示悬挂缩进，0 表示顶格。
+
+        python-docx 只解析 w:firstLine / w:hanging 的缇值，读不到字符写法与样式继承，
+        这里按直接格式 → 样式链 → docDefaults 逐层读取字符与缇两种写法。
+        """
+        twips_per_char = max(1.0, self._indent_font_size_pt(para, font_size_pt) * 20.0)
+        for ind in self._indent_elements(para):
+            for attribute, scale, sign in (
+                    ('firstLineChars', 0.01, 1),
+                    ('firstLine', 1.0 / twips_per_char, 1),
+                    ('hangingChars', 0.01, -1),
+                    ('hanging', 1.0 / twips_per_char, -1)):
+                raw = ind.get(qn('w:' + attribute))
+                if raw is None:
+                    continue
+                try:
+                    return sign * float(raw) * scale
+                except (TypeError, ValueError):
+                    return 0.0
+        return 0.0
+
+    def _is_flush_left_paragraph(self, para):
+        """段落首行是否顶格（直接格式与样式链上都没有首行/悬挂缩进）。"""
+        return abs(self._first_line_indent_chars(para)) < 1e-6
+
+    @staticmethod
+    def _clear_first_line_indent(para, keep_twips=False):
+        """清掉直接格式上的首行/悬挂缩进；keep_twips=True 时只清字符写法。"""
+        p_pr = para._p.pPr
+        ind = p_pr.find(qn('w:ind')) if p_pr is not None else None
+        if ind is None:
+            return
+        attributes = ('firstLineChars', 'hangingChars')
+        if not keep_twips:
+            attributes += ('firstLine', 'hanging')
+        for attribute in attributes:
+            ind.attrib.pop(qn('w:' + attribute), None)
+
     def _iter_block_items(self, parent):
         parent_elm = parent.element.body if isinstance(parent, _Document) else parent._tc
         for child in parent_elm.iterchildren():
@@ -1656,6 +1747,7 @@ class WordProcessor:
                                     self._set_run_bold(run, header_bold)
 
                         para.paragraph_format.first_line_indent = Pt(0)
+                        self._clear_first_line_indent(para, keep_twips=True)
                         para.paragraph_format.space_before = Pt(0)
                         para.paragraph_format.space_after = Pt(0)
                         self._apply_line_spacing(
@@ -1937,7 +2029,7 @@ class WordProcessor:
         self._apply_font_to_runs(para, self.config[prefix + '_font'], self.config[prefix + '_size'], set_color=apply_color)
         self._apply_bold_to_runs(para, self.config.get(prefix + '_bold', 'preserve'))
         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.first_line_indent = None
+        self._clear_first_line_indent(para)
         spacing = para._p.get_or_add_pPr().get_or_add_spacing()
         spacing.set(qn('w:beforeAutospacing'), '0')
         spacing.set(qn('w:afterAutospacing'), '0')
@@ -2260,7 +2352,7 @@ class WordProcessor:
                 self._apply_font_to_runs(para, self.config['title_font'], self.config['title_size'], set_color=apply_color)
                 self._apply_bold_to_runs(para, self.config.get('title_bold', False))
                 para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                para.paragraph_format.first_line_indent = None
+                self._clear_first_line_indent(para)
                 
                 # 设置标题行间距
                 spacing = para._p.get_or_add_pPr().get_or_add_spacing()
@@ -2288,7 +2380,7 @@ class WordProcessor:
                 self._apply_font_to_runs(para, self.config['subtitle_font'], self.config['subtitle_size'], set_color=apply_color)
                 self._apply_bold_to_runs(para, self.config.get('subtitle_bold', 'preserve'))
                 para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                para.paragraph_format.first_line_indent = None
+                self._clear_first_line_indent(para)
                 
                 # 设置副标题行间距
                 spacing = para._p.get_or_add_pPr().get_or_add_spacing()
@@ -2451,18 +2543,18 @@ class WordProcessor:
                     self._log(f"段落 {current_block_num}: {align_text}正文 - 保留原对齐")
                     self._apply_font_to_runs(para, self.config['body_font'], self.config['body_size'], set_color=apply_color)
                     self._reset_pagination_properties(para)
-                elif leading_space_count > 5:
-                    self._log(f"段落 {current_block_num}: 正文 (保留前导空格) - \"{para_text_preview}...\"")
-                    self._apply_font_to_runs(para, self.config['body_font'], self.config['body_size'], set_color=apply_color)
-                    para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                    self._reset_pagination_properties(para)
-                elif (para.paragraph_format.first_line_indent is None or para.paragraph_format.first_line_indent.pt == 0) and leading_space_count == 0:
-                    self._log(f"段落 {current_block_num}: 正文 (保留0缩进) - \"{para_text_preview}...\"")
+                elif (self.config.get('preserve_zero_indent', False)
+                      and leading_space_count == 0
+                      and self._is_flush_left_paragraph(para)):
+                    self._log(f"段落 {current_block_num}: 正文 (保留源文档0缩进) - \"{para_text_preview}...\"")
                     self._apply_font_to_runs(para, self.config['body_font'], self.config['body_size'], set_color=apply_color)
                     para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                     self._reset_pagination_properties(para)
                 else:
-                    self._log(f"段落 {current_block_num}: 正文 (应用标准缩进) - \"{para_text_preview}...\"")
+                    if leading_space_count > 5:
+                        self._log(f"段落 {current_block_num}: 正文 (清理前导空格后缩进) - \"{para_text_preview}...\"")
+                    else:
+                        self._log(f"段落 {current_block_num}: 正文 (应用标准缩进) - \"{para_text_preview}...\"")
                     self._strip_leading_whitespace(para)
                     self._apply_font_to_runs(para, self.config['body_font'], self.config['body_size'], set_color=apply_color)
                     self._apply_text_indent_and_align(para)

@@ -29,6 +29,7 @@
 | 副标题行距改为 33 磅 | `--set subtitle_line_spacing=33` |
 | 缩进改为字符单位，首行 2 字符 | `--set paragraph_indent_unit=chars --set first_line_indent_chars=2` |
 | 正文左右缩进各 1 字符 | `--set paragraph_indent_unit=chars --set left_indent_chars=1 --set right_indent_chars=1` |
+| 保留源文档顶格段落，不补首行缩进 | `--set preserve_zero_indent=true` |
 | 题目强制加粗 | `--set title_bold=true` |
 | 一级/二级标题强制加粗 | `--set h1_bold=true --set h2_bold=true` |
 | 强制 A4 | `--set force_a4=true` |
@@ -46,7 +47,7 @@
 
 行距默认沿用旧版磅值模式：`line_spacing_unit/title_line_spacing_unit/subtitle_line_spacing_unit/table_line_spacing_unit` 默认为 `pt`。切换为 `multiple` 后，对应的 `*_line_spacing_multiple` 默认按 `1.0` 单倍行距解释。
 
-段落缩进默认沿用旧版厘米模式：`paragraph_indent_unit=cm` 时读取 `left_indent_cm/right_indent_cm`。需要字符单位时改为 `chars`，并设置 `left_indent_chars/right_indent_chars/first_line_indent_chars`，其中首行缩进默认 2 字符。
+段落缩进默认沿用旧版厘米模式：`paragraph_indent_unit=cm` 时读取 `left_indent_cm/right_indent_cm`。需要字符单位时改为 `chars`，并设置 `left_indent_chars/right_indent_chars/first_line_indent_chars`，其中首行缩进默认 2 字符。首行缩进对正文段落统一生效（含源文档顶格、前导空格较多、字符单位或样式缩进的段落）；需要保留源文档顶格段时设 `preserve_zero_indent=true`。
 
 ## 常用字号对照
 
