@@ -103,6 +103,25 @@ def looks_like_body_list(text):
     if stripped[-1] in BODY_LIST_TRAILING_PUNCT:
         return True
     return len(stripped) > BODY_LIST_MAX_LEN
+
+
+HEADING_STYLE_LEVEL = re.compile(r'^(?:heading|标题)\s*([1-9])$', re.IGNORECASE)
+
+
+def heading_level_from_style(paragraph):
+    """按段落套用的内置标题样式取级别（1-9），非标题样式返回 None。
+
+    Word/WPS 的 Heading 1..9 样式在 styles.xml 里通常并不写 w:outlineLvl，
+    级别来自样式名本身的语义，所以这里只能按名字映射。
+    """
+    try:
+        name = (paragraph.style.name or '').strip()
+    except Exception:
+        return None
+    match = HEADING_STYLE_LEVEL.match(name)
+    if match:
+        return int(match.group(1))
+    return None
 RE_ATTACHMENT = re.compile(r'^附件\s*(\d+|[一二三四五六七八九十百千万零]+)?\s*[:：]?$')
 RE_H2_INLINE_TITLE = re.compile(r'^[（\(](.+?)[）\)](.*)', re.DOTALL)
 RE_ATTACHMENT_LINE = re.compile(
@@ -2500,7 +2519,8 @@ class WordProcessor:
                 28,
             )
 
-            if RE_HEADING_H1.match(text_to_check):
+            style_level = heading_level_from_style(para)
+            if RE_HEADING_H1.match(text_to_check) or style_level == 1:
                 self._log(f"段落 {current_block_num}: 一级标题 - \"{para_text_preview}...\"")
                 self._strip_leading_whitespace(para)
                 self._format_heading(para, 1)
@@ -2509,7 +2529,7 @@ class WordProcessor:
                 self._apply_text_indent_and_align(para)
                 self._reset_pagination_properties(para)
 
-            elif RE_HEADING_H2.match(text_to_check):
+            elif RE_HEADING_H2.match(text_to_check) or style_level == 2:
                 self._log(f"段落 {current_block_num}: 二级标题 - \"{para_text_preview}...\"")
                 self._strip_leading_whitespace(para)
                 
@@ -2535,7 +2555,7 @@ class WordProcessor:
                     self._apply_text_indent_and_align(para)
                     self._reset_pagination_properties(para)
                     
-            elif RE_HEADING_H3.match(text_to_check) and not looks_like_body_list(text_to_check):
+            elif (RE_HEADING_H3.match(text_to_check) and not looks_like_body_list(text_to_check)) or style_level == 3:
                 self._log(f"段落 {current_block_num}: 三级标题 - \"{para_text_preview}...\"")
                 self._strip_leading_whitespace(para)
                 self._format_heading(para, 3)
@@ -2543,7 +2563,7 @@ class WordProcessor:
                 self._apply_text_indent_and_align(para)
                 self._reset_pagination_properties(para)
                 
-            elif RE_HEADING_H4.match(text_to_check) and not looks_like_body_list(text_to_check):
+            elif (RE_HEADING_H4.match(text_to_check) and not looks_like_body_list(text_to_check)) or style_level == 4:
                 self._log(f"段落 {current_block_num}: 四级标题 - \"{para_text_preview}...\"")
                 self._strip_leading_whitespace(para)
                 self._format_heading(para, 4)

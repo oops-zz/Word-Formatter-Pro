@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""标题识别：正文里的有序列举不能被当成章节标题。
+"""标题识别：正文里的有序列举不能被当成章节标题；带标题样式的段落必须被识别。
 
-背景（实测）：``wfp_core.py`` 里 ``RE_HEADING_H3 = ^\\d+\\s*[.．]`` 会把
-"1. xxx；" 这类正文列举一并判为三级标题，并写入 ``w:outlineLvl``。
-真实样本"软件物料清单（SBOM）管理规程"里有 10 条正文列举被这样污染，
-接上自动目录后会直接出现在目录里。
+背景（实测）：
+1. ``wfp_core.py`` 的 ``RE_HEADING_H3 = ^\\d+\\s*[.．]`` 会把 "1. xxx；" 这类
+   正文列举一并判为三级标题并写入 ``w:outlineLvl``。真实样本"软件物料清单
+   （SBOM）管理规程"里有 10 条正文列举被这样污染。
+2. 同一份文档有 27 条 ``Heading 1/2/3`` 样式段落，但程序从不读 ``w:pStyle``，
+   只靠文本前缀猜。文本没有 "一、"/"（一）"/"1." 前缀的标题（如
+   "1 目的与适用范围"）全部被当成正文。
 """
 import tempfile
 import unittest
@@ -81,6 +84,23 @@ class HeadingRecognitionTests(unittest.TestCase):
         ])
         self.assertEqual(levels[0], 3, '「1. 总则」仍是三级标题')
         self.assertEqual(levels[1], 3, '「2. 适用范围」仍是三级标题')
+
+    def test_heading_style_without_number_prefix_is_recognized(self):
+        """套了 Heading N 样式但文本没有编号前缀，也要识别成对应级别。"""
+        levels = self.format_texts(
+            ['软件物料清单管理规程', '目的与适用范围', '术语与依据'],
+            styles=['Heading 1', 'Heading 2', 'Heading 3'],
+        )
+        self.assertEqual(levels[0], 1, 'Heading 1 样式应识别为一级标题')
+        self.assertEqual(levels[1], 2, 'Heading 2 样式应识别为二级标题')
+        self.assertEqual(levels[2], 3, 'Heading 3 样式应识别为三级标题')
+
+    def test_plain_body_paragraph_without_style_stays_body(self):
+        """既无标题样式也无编号前缀的段落仍是正文。"""
+        levels = self.format_texts([
+            '本规程适用于公司范围内所有自研与外购组件的物料清单管理。',
+        ])
+        self.assertIsNone(levels[0], '普通正文不应带大纲级别')
 
 
 if __name__ == '__main__':
