@@ -39,7 +39,7 @@ DEFAULT_CONFIG = {
     'preserve_zero_indent': False,
     'title_bold': 'preserve', 'subtitle_bold': 'preserve',
     'h1_bold': 'preserve', 'h2_bold': 'preserve', 'attachment_bold': 'preserve',
-    'set_outline': True, 'auto_heading_numbering': False, 'enable_attachment_formatting': True,
+    'set_outline': True, 'auto_heading_numbering': True, 'enable_attachment_formatting': True,
     'force_a4': False, 'use_custom_english_font': False, 'english_font': 'Times New Roman',
     'blank_line_mode': DEFAULT_BLANK_LINE_MODE, 'normalize_punctuation': False,
     'enable_table_formatting': False, 'table_header_font': '仿宋_GB2312',

@@ -1350,15 +1350,34 @@ class WordProcessor:
             return 4
         return None
 
-    def _renumber_heading_numbers(self, doc):
-        """把标题的文字编号换成分级自动编号，交给编辑器自己重排。"""
-        if not self.config.get('auto_heading_numbering', True):
+    def _renumber_heading_numbers(self, doc, exclude=None, skip=False):
+        """把标题的文字编号换成分级自动编号，交给编辑器自己重排。
+
+        exclude 是附件区域内的段落元素集合：附件里的列举项不是章节，
+        改写成自动编号会把它们的编号文字吃掉。
+        skip 用于 TXT/Markdown 输入：那里的标题层级只是按文本前缀猜的，
+        不足以支撑自动编号。
+        """
+        if skip or not self.config.get('auto_heading_numbering', True):
             return
         headings = []
+        in_attachment = False
         for block in self._iter_block_items(doc):
             if not isinstance(block, Paragraph):
                 continue
-            if not self._paragraph_text(block).strip():
+            stripped = self._paragraph_text(block).strip()
+            if not stripped:
+                continue
+            # 附件及其后的内容不是正文章节，改编号会把附件里的列举项吃掉
+            if stripped.startswith('附件'):
+                in_attachment = True
+            if in_attachment:
+                continue
+            if exclude and block._p in exclude:
+                continue
+            # 标题与正文同段（"（一）标题。正文"）时编号是行内标记，
+            # 换成自动编号会破坏这个段落结构
+            if '。' in stripped:
                 continue
             level = self._heading_level_for_numbering(block)
             if level is None:
@@ -2652,7 +2671,8 @@ class WordProcessor:
             
             block_idx += 1
         
-        self._renumber_heading_numbers(doc)
+        self._renumber_heading_numbers(
+            doc, exclude=set(attachment_roles), skip=is_from_txt)
         self._format_tables(doc, apply_color=apply_color)
         self._apply_page_setup(doc, is_from_txt=is_from_txt)
         for role in signature_roles.values():
