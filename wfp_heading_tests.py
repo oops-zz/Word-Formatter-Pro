@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""标题识别：正文里的有序列举不能被当成章节标题；带标题样式的段落必须被识别。
+"""标题识别：正文列举不能当标题；带 Heading 标识的样式必须被识别。
 
 背景（实测）：
 1. ``wfp_core.py`` 的 ``RE_HEADING_H3 = ^\\d+\\s*[.．]`` 会把 "1. xxx；" 这类
@@ -8,6 +8,8 @@
 2. 同一份文档有 27 条 ``Heading 1/2/3`` 样式段落，但程序从不读 ``w:pStyle``，
    只靠文本前缀猜。文本没有 "一、"/"（一）"/"1." 前缀的标题（如
    "1 目的与适用范围"）全部被当成正文。
+3. Heading 1..9 样式在 styles.xml 里并不写 ``w:outlineLvl``，级别靠样式名或
+   styleId 里的 Heading 标识表达，所以两者都要查。
 """
 import tempfile
 import unittest
@@ -15,6 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml.ns import qn
 
 from wfp_config import DEFAULT_CONFIG
@@ -41,13 +44,18 @@ class HeadingRecognitionTests(unittest.TestCase):
         config.update(options)
         return WordProcessor(config)
 
-    def format_texts(self, texts, styles=None, **options):
-        """排版一组段落，返回每段的大纲级别列表。"""
+    def format_texts(self, texts, styles=None, prepare=None, **options):
+        """排版一组段落，返回每段的大纲级别列表。
+
+        prepare 可在保存前拿到 document，用于构造自定义样式。
+        """
         styles = styles or [None] * len(texts)
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'source.docx'
             output = Path(directory) / 'output.docx'
             doc = Document()
+            if prepare is not None:
+                prepare(doc)
             for text, style in zip(texts, styles):
                 if style is None:
                     doc.add_paragraph(text)
@@ -94,6 +102,32 @@ class HeadingRecognitionTests(unittest.TestCase):
         self.assertEqual(levels[0], 1, 'Heading 1 样式应识别为一级标题')
         self.assertEqual(levels[1], 2, 'Heading 2 样式应识别为二级标题')
         self.assertEqual(levels[2], 3, 'Heading 3 样式应识别为三级标题')
+
+    def test_style_id_with_heading_marker_is_recognized(self):
+        """样式名不含 Heading、但 styleId 带 Heading 标识时也要识别。"""
+
+        def prepare(doc):
+            style = doc.styles.add_style('MyHeading3', WD_STYLE_TYPE.PARAGRAPH)
+            name = style.element.find(qn('w:name'))
+            name.set(qn('w:val'), '章节样式')
+
+        levels = self.format_texts(
+            ['术语与依据'], styles=['MyHeading3'], prepare=prepare,
+        )
+        self.assertEqual(levels[0], 3, 'styleId=MyHeading3 应识别为三级标题')
+
+    def test_heading_style_without_digit_is_not_a_chapter(self):
+        """含 Heading 但没有级别数字的样式（如 TOC Heading）不能当章节标题。"""
+
+        def prepare(doc):
+            style = doc.styles.add_style('HeadingNoDigit', WD_STYLE_TYPE.PARAGRAPH)
+            name = style.element.find(qn('w:name'))
+            name.set(qn('w:val'), 'TOC Heading')
+
+        levels = self.format_texts(
+            ['目录'], styles=['HeadingNoDigit'], prepare=prepare,
+        )
+        self.assertIsNone(levels[0], '无级别数字的 Heading 类样式不应带大纲级别')
 
     def test_plain_body_paragraph_without_style_stays_body(self):
         """既无标题样式也无编号前缀的段落仍是正文。"""

@@ -105,22 +105,28 @@ def looks_like_body_list(text):
     return len(stripped) > BODY_LIST_MAX_LEN
 
 
-HEADING_STYLE_LEVEL = re.compile(r'^(?:heading|标题)\s*([1-9])$', re.IGNORECASE)
+HEADING_STYLE_LEVEL = re.compile(r'(?:heading|标题)\s*([1-9])', re.IGNORECASE)
 
 
 def heading_level_from_style(paragraph):
-    """按段落套用的内置标题样式取级别（1-9），非标题样式返回 None。
+    """按段落套用的样式取标题级别（1-9），非标题样式返回 None。
 
     Word/WPS 的 Heading 1..9 样式在 styles.xml 里通常并不写 w:outlineLvl，
-    级别来自样式名本身的语义，所以这里只能按名字映射。
+    级别靠样式名或 styleId 里的 Heading 标识表达，所以两者都查。
+    必须带级别数字才认——"TOC Heading" 这类无数字的样式是目录标题，
+    认成章节会把它写进大纲。
     """
     try:
-        name = (paragraph.style.name or '').strip()
+        style = paragraph.style
     except Exception:
         return None
-    match = HEADING_STYLE_LEVEL.match(name)
-    if match:
-        return int(match.group(1))
+    if style is None:
+        return None
+    candidates = (getattr(style, 'name', None), getattr(style, 'style_id', None))
+    for candidate in candidates:
+        match = HEADING_STYLE_LEVEL.search(candidate or '')
+        if match:
+            return int(match.group(1))
     return None
 RE_ATTACHMENT = re.compile(r'^附件\s*(\d+|[一二三四五六七八九十百千万零]+)?\s*[:：]?$')
 RE_H2_INLINE_TITLE = re.compile(r'^[（\(](.+?)[）\)](.*)', re.DOTALL)
