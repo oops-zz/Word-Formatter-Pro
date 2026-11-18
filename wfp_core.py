@@ -1424,9 +1424,6 @@ class WordProcessor:
             level = self._heading_level_for_numbering(block)
             if level is None:
                 continue
-            counters[level] += 1
-            for deeper in range(level + 1, len(counters)):
-                counters[deeper] = 0
 
             kind = None
             match = None
@@ -1435,8 +1432,13 @@ class WordProcessor:
                 if found:
                     kind, match = candidate_kind, found
                     break
+            # 没有编号的标题不占序号，否则文档大标题会把第一章顶成第二章
             if match is None:
                 continue
+
+            counters[level] += 1
+            for deeper in range(level + 1, len(counters)):
+                counters[deeper] = 0
             old_number = match.group(1)
             new_number = self._build_heading_number(kind, old_number, level, counters)
             if not new_number or new_number == old_number:

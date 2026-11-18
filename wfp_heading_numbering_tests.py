@@ -127,6 +127,15 @@ class HeadingNumberingTests(unittest.TestCase):
         self.assertEqual(result[2][0], '3 基线', '缺号应接上')
         self.assertEqual(result[3][0], '3.1 子', '子节跟随新父级序号')
 
+    def test_untitled_document_heading_does_not_consume_a_number(self):
+        """文档大标题没有编号，不能把第一章顶成第二章。"""
+        result = self.format_texts(
+            ['重排编号测试文档', '一、总体要求', '三、实施步骤'],
+            styles=['Heading 1', 'Heading 2', 'Heading 2'],
+        )
+        self.assertEqual(result[1][0], '一、总体要求', '第一章仍应为「一、」')
+        self.assertEqual(result[2][0], '二、实施步骤')
+
 
 if __name__ == '__main__':
     unittest.main()

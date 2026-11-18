@@ -163,6 +163,7 @@ class WordFormatterGUI:
         self.use_custom_english_font_var = tk.BooleanVar(value=self.default_params['use_custom_english_font'])
         self.normalize_punctuation_var = tk.BooleanVar(value=self.default_params['normalize_punctuation'])
         self.convert_auto_numbering_var = tk.BooleanVar(value=self.default_params['convert_auto_numbering'])
+        self.auto_heading_numbering_var = tk.BooleanVar(value=self.default_params['auto_heading_numbering'])
         self.enable_table_var = tk.BooleanVar(value=self.default_params['enable_table_formatting'])
         self.table_auto_col_width_var = tk.BooleanVar(value=self.default_params['table_auto_col_width'])
         self.table_remove_wrapping_var = tk.BooleanVar(value=self.default_params['table_remove_text_wrapping'])
@@ -1012,6 +1013,11 @@ class WordFormatterGUI:
         ttk.Checkbutton(advanced_frame, text="启用符号标准化", variable=self.normalize_punctuation_var).grid(row=row, column=2, columnspan=2, sticky=tk.W, padx=3, pady=1)
         row += 1
         ttk.Checkbutton(
+            advanced_frame, text="按标题层级重排章节编号",
+            variable=self.auto_heading_numbering_var,
+        ).grid(row=row, column=0, columnspan=4, sticky=tk.W, padx=3, pady=1)
+        row += 1
+        ttk.Checkbutton(
             advanced_frame,
             text="自定义数字和字母字体",
             variable=self.use_custom_english_font_var,
@@ -1141,6 +1147,7 @@ class WordFormatterGUI:
         self.use_custom_english_font_var.set(loaded_config.get('use_custom_english_font', False))
         self.normalize_punctuation_var.set(loaded_config.get('normalize_punctuation', False))
         self.convert_auto_numbering_var.set(loaded_config.get('convert_auto_numbering', True))
+        self.auto_heading_numbering_var.set(loaded_config.get('auto_heading_numbering', False))
         self.enable_table_var.set(loaded_config.get('enable_table_formatting', False))
         self.table_auto_col_width_var.set(loaded_config.get('table_auto_col_width', True))
         self.table_remove_wrapping_var.set(loaded_config.get('table_remove_text_wrapping', False))
@@ -1155,7 +1162,7 @@ class WordFormatterGUI:
         self.signature_include_attachments_var.set(loaded_config.get('signature_include_attachments', False))
         self.signature_normalize_date_var.set(loaded_config.get('signature_normalize_date', False))
         boolean_keys = [
-            'convert_auto_numbering',
+            'convert_auto_numbering', 'auto_heading_numbering',
             'set_outline', 'enable_attachment_formatting', 'force_a4',
             'use_custom_english_font', 'use_times_new_roman',
             'remove_blank_lines', 'normalize_punctuation',
@@ -1211,6 +1218,7 @@ class WordFormatterGUI:
         config['use_custom_english_font'] = self.use_custom_english_font_var.get()
         config['normalize_punctuation'] = self.normalize_punctuation_var.get()
         config['convert_auto_numbering'] = self.convert_auto_numbering_var.get()
+        config['auto_heading_numbering'] = self.auto_heading_numbering_var.get()
         config['enable_table_formatting'] = self.enable_table_var.get()
         config['table_auto_col_width'] = self.table_auto_col_width_var.get()
         config['table_remove_text_wrapping'] = self.table_remove_wrapping_var.get()
