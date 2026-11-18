@@ -88,6 +88,21 @@ RE_HEADING_H1 = re.compile(r'^[一二三四五六七八九十百千万零]+\s*�
 RE_HEADING_H2 = re.compile(r'^[（\(][一二三四五六七八九十百千万零]+[）\)]')
 RE_HEADING_H3 = re.compile(r'^\d+\s*[\.．]')
 RE_HEADING_H4 = re.compile(r'^[（\(]\d+[）\)]')
+
+# 正文有序列举的特征：编号后面接一整句完整的话收尾。真章节标题短、不以标点结尾，
+# 而"1. 同一组件同时出现在白名单与黑名单时以黑名单为准；"这类是列举不是章节。
+BODY_LIST_TRAILING_PUNCT = '。；;，,：:、！!？?'
+BODY_LIST_MAX_LEN = 40
+
+
+def looks_like_body_list(text):
+    """判断带编号的文字是正文列举，而不是章节标题。"""
+    stripped = (text or '').strip()
+    if not stripped:
+        return False
+    if stripped[-1] in BODY_LIST_TRAILING_PUNCT:
+        return True
+    return len(stripped) > BODY_LIST_MAX_LEN
 RE_ATTACHMENT = re.compile(r'^附件\s*(\d+|[一二三四五六七八九十百千万零]+)?\s*[:：]?$')
 RE_H2_INLINE_TITLE = re.compile(r'^[（\(](.+?)[）\)](.*)', re.DOTALL)
 RE_ATTACHMENT_LINE = re.compile(
@@ -2520,7 +2535,7 @@ class WordProcessor:
                     self._apply_text_indent_and_align(para)
                     self._reset_pagination_properties(para)
                     
-            elif RE_HEADING_H3.match(text_to_check):
+            elif RE_HEADING_H3.match(text_to_check) and not looks_like_body_list(text_to_check):
                 self._log(f"段落 {current_block_num}: 三级标题 - \"{para_text_preview}...\"")
                 self._strip_leading_whitespace(para)
                 self._format_heading(para, 3)
@@ -2528,7 +2543,7 @@ class WordProcessor:
                 self._apply_text_indent_and_align(para)
                 self._reset_pagination_properties(para)
                 
-            elif RE_HEADING_H4.match(text_to_check):
+            elif RE_HEADING_H4.match(text_to_check) and not looks_like_body_list(text_to_check):
                 self._log(f"段落 {current_block_num}: 四级标题 - \"{para_text_preview}...\"")
                 self._strip_leading_whitespace(para)
                 self._format_heading(para, 4)
