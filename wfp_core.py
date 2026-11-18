@@ -130,33 +130,6 @@ def heading_level_from_style(paragraph):
     return None
 
 
-CHINESE_DIGIT_CHARS = '一二三四五六七八九十百'
-
-# 标题编号前缀：只匹配序号部分，分隔符和尾随空白留在原文里。
-# 多级模式必须排在单级之前，否则 "3.1" 会先被 "3" 匹配掉。
-NUMBER_PREFIX_PATTERNS = (
-    ('multi', re.compile(r'^(\d{1,3}(?:[.．]\d{1,3})+)')),
-    ('chinese_dun', re.compile(r'^([' + CHINESE_DIGIT_CHARS + r']+)(?=\s*、)')),
-    ('chinese_paren', re.compile(r'^[（(]([' + CHINESE_DIGIT_CHARS + r']+)(?=[）)])')),
-    ('arabic_dot', re.compile(r'^(\d{1,3})(?=\s*[.．](?!\d))')),
-    ('arabic_space', re.compile(r'^(\d{1,3})(?=\s)')),
-    ('arabic_paren', re.compile(r'^[（(](\d{1,3})(?=[）)])')),
-)
-
-
-def int_to_chinese(value):
-    """把 1-99 的整数转成中文数字；超出范围返回 None。"""
-    digits = '零一二三四五六七八九'
-    if value < 1 or value > 99:
-        return None
-    if value < 10:
-        return digits[value]
-    if value == 10:
-        return '十'
-    tens, ones = divmod(value, 10)
-    if tens == 1:
-        return '十' + (digits[ones] if ones else '')
-    return digits[tens] + '十' + (digits[ones] if ones else '')
 RE_ATTACHMENT = re.compile(r'^附件\s*(\d+|[一二三四五六七八九十百千万零]+)?\s*[:：]?$')
 RE_H2_INLINE_TITLE = re.compile(r'^[（\(](.+?)[）\)](.*)', re.DOTALL)
 RE_ATTACHMENT_LINE = re.compile(
@@ -1064,7 +1037,7 @@ class WordProcessor:
             self._log(f"  > 自动编号转换完成，共转换 {report.converted} 个段落。")
         return output_path
 
-    def _preprocess_com_tasks(self, docx_path):
+    def _preprocess_com_tasks(self, docx_path, convert_numbering=True):
         if not self._com_available():
             self._log(f"  > {self._com_unavailable_message()}")
             return False
@@ -1081,8 +1054,11 @@ class WordProcessor:
                 doc_com.AcceptAllRevisions()
                 self._log("  > 已接受文档副本中的所有修订。")
             
-            doc_com.Content.ListFormat.ConvertNumbersToText()
-            self._log("  > 已将副本中的自动编号转换为文本。")
+            if convert_numbering:
+                doc_com.Content.ListFormat.ConvertNumbersToText()
+                self._log("  > 已将副本中的自动编号转换为文本。")
+            else:
+                self._log("  > 保留源文档自动编号（后续改用分级自动编号）。")
             
             if doc_com.Revisions.Count > 0:
                 doc_com.AcceptAllRevisions()
@@ -1374,79 +1350,24 @@ class WordProcessor:
             return 4
         return None
 
-    @staticmethod
-    def _build_heading_number(kind, old_number, level, counters):
-        """按原编号形态生成新序号；只返回数字部分，分隔符留在原文里。"""
-        if kind == 'multi':
-            span = len(re.split(r'[.．]', old_number))
-            parts = []
-            for offset in range(span):
-                source = level - span + 1 + offset
-                if source < 1:
-                    return None
-                parts.append(str(counters[source]))
-            return '.'.join(parts)
-        value = counters[level]
-        if kind in ('chinese_dun', 'chinese_paren'):
-            return int_to_chinese(value)
-        if kind in ('arabic_dot', 'arabic_paren', 'arabic_space'):
-            return str(value)
-        return None
-
-    def _replace_number_span(self, para, match, new_number):
-        """替换段落第一个非空 run 中 match 覆盖的序号；跨 run 时保持原样。"""
-        start, end = match.span(1)
-        for run in self._iter_inline_runs(para):
-            run_text = self._inline_run_text(run)
-            if not run_text:
-                continue
-            lead_length = len(run_text) - len(run_text.lstrip())
-            begin = lead_length + start
-            finish = lead_length + end
-            if finish > len(run_text):
-                return False
-            run.text = run_text[:begin] + new_number + run_text[finish:]
-            return True
-        return False
-
     def _renumber_heading_numbers(self, doc):
-        """按出现顺序重写标题序号，保留源文档的编号格式。"""
+        """把标题的文字编号换成分级自动编号，交给编辑器自己重排。"""
         if not self.config.get('auto_heading_numbering', True):
             return
-        counters = [0] * 10
-        changed = 0
+        headings = []
         for block in self._iter_block_items(doc):
             if not isinstance(block, Paragraph):
                 continue
-            stripped = self._paragraph_text(block).strip()
-            if not stripped:
+            if not self._paragraph_text(block).strip():
                 continue
             level = self._heading_level_for_numbering(block)
             if level is None:
                 continue
-
-            kind = None
-            match = None
-            for candidate_kind, pattern in NUMBER_PREFIX_PATTERNS:
-                found = pattern.match(stripped)
-                if found:
-                    kind, match = candidate_kind, found
-                    break
-            # 没有编号的标题不占序号，否则文档大标题会把第一章顶成第二章
-            if match is None:
-                continue
-
-            counters[level] += 1
-            for deeper in range(level + 1, len(counters)):
-                counters[deeper] = 0
-            old_number = match.group(1)
-            new_number = self._build_heading_number(kind, old_number, level, counters)
-            if not new_number or new_number == old_number:
-                continue
-            if self._replace_number_span(block, match, new_number):
-                changed += 1
-        if changed:
-            self._log(f"  > 标题编号重排完成，共调整 {changed} 处。")
+            headings.append((block, level))
+        if not headings:
+            return
+        from wfp_auto_numbering import apply_heading_auto_numbering
+        apply_heading_auto_numbering(doc, headings, self._log)
 
     def _format_heading(self, para, level):
         """
