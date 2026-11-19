@@ -106,6 +106,26 @@ class AutoNumberingTests(unittest.TestCase):
                  for node in abstract.findall(qn('w:lvl') + '/' + qn('w:lvlText'))]
         self.assertIn('%2.%3', texts, '三级应拼接父级（二级）序号')
 
+    def test_numbering_levels_carry_heading_font(self):
+        """编号符号必须带标题层级的字体，否则会继承默认字体。"""
+        doc = self.format_doc([
+            ('Heading 2', '一、总体要求'),
+            ('Heading 3', '（一）适用范围'),
+        ])
+        numbering = doc.part.numbering_part.element
+        abstract = numbering.findall(qn('w:abstractNum'))[-1]
+        levels = abstract.findall(qn('w:lvl'))
+
+        for lvl in levels[:3]:
+            self.assertIsNotNone(lvl.find(qn('w:rPr')),
+                                 '每一级编号都应带 rPr')
+
+        second = levels[1].find(qn('w:rPr')).find(qn('w:rFonts'))
+        self.assertIsNotNone(second, '二级编号应有字体定义')
+        self.assertEqual(second.get(qn('w:eastAsia')),
+                         DEFAULT_CONFIG['h2_font'],
+                         '二级编号应使用二级标题字体')
+
     def test_disabled_leaves_text_untouched(self):
         """关闭开关时保持原文字编号。"""
         doc = self.format_doc(

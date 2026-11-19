@@ -108,7 +108,32 @@ def _next_num_id(numbering):
     return (max(used) + 1) if used else 1
 
 
-def build_definition(numbering, level_formats, max_level):
+def _lvl_rpr(font):
+    """生成编号符号的 rPr。不写就会继承段落标记字体，和标题字体不一致。"""
+    if not font:
+        return None
+    name, size_pt = font
+    rpr = OxmlElement('w:rPr')
+    if name:
+        fonts = OxmlElement('w:rFonts')
+        # 中文字形走 eastAsia，阿拉伯数字走 ascii/hAnsi，两者都要给，
+        # 否则"1."用西文字体、"一、"用中文字体，看起来两套样式
+        for attr in ('ascii', 'hAnsi', 'eastAsia'):
+            fonts.set(qn(f'w:{attr}'), name)
+        fonts.set(qn('w:hint'), 'eastAsia')
+        rpr.append(fonts)
+    if size_pt:
+        half_points = str(int(round(float(size_pt) * 2)))
+        sz = OxmlElement('w:sz')
+        sz.set(qn('w:val'), half_points)
+        rpr.append(sz)
+        sz_cs = OxmlElement('w:szCs')
+        sz_cs.set(qn('w:val'), half_points)
+        rpr.append(sz_cs)
+    return rpr if len(rpr) else None
+
+
+def build_definition(numbering, level_formats, max_level, level_fonts=None):
     """写入一个多级 abstractNum 和一个 num 实例，返回 numId。"""
     abstract_id = _next_abstract_id(numbering)
     num_id = _next_num_id(numbering)
@@ -139,21 +164,24 @@ def build_definition(numbering, level_formats, max_level):
         fmt = OxmlElement('w:numFmt')
         fmt.set(qn('w:val'), num_fmt)
         lvl.append(fmt)
+        suff = OxmlElement('w:suff')
+        suff.set(qn('w:val'), suffix)
+        lvl.append(suff)
         text = OxmlElement('w:lvlText')
         text.set(qn('w:val'), lvl_text)
         lvl.append(text)
         justification = OxmlElement('w:lvlJc')
         justification.set(qn('w:val'), 'left')
         lvl.append(justification)
-        suff = OxmlElement('w:suff')
-        suff.set(qn('w:val'), suffix)
-        lvl.append(suff)
         ppr = OxmlElement('w:pPr')
         ind = OxmlElement('w:ind')
         ind.set(qn('w:left'), '0')
         ind.set(qn('w:hanging'), '0')
         ppr.append(ind)
         lvl.append(ppr)
+        rpr = _lvl_rpr((level_fonts or {}).get(level))
+        if rpr is not None:
+            lvl.append(rpr)
         abstract.append(lvl)
 
     existing = numbering.findall(qn('w:abstractNum'))
@@ -186,7 +214,7 @@ def attach_numbering(paragraph, num_id, level):
     ppr.append(numpr)
 
 
-def apply_heading_auto_numbering(doc, headings, log=None, max_level=4):
+def apply_heading_auto_numbering(doc, headings, log=None, max_level=4, level_fonts=None):
     """把标题的文字编号换成分级自动编号。
 
     headings: 按文档顺序的 [(paragraph, level)]，level 从 1 开始。
@@ -220,7 +248,7 @@ def apply_heading_auto_numbering(doc, headings, log=None, max_level=4):
             log("  > 标题没有可识别的编号，未生成自动编号。")
         return 0
 
-    num_id = build_definition(numbering, level_formats, max_level)
+    num_id = build_definition(numbering, level_formats, max_level, level_fonts)
     changed = 0
     for paragraph, level, full_prefix in entries:
         if not strip_prefix(paragraph, full_prefix):

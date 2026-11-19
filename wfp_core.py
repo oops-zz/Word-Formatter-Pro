@@ -1386,7 +1386,15 @@ class WordProcessor:
         if not headings:
             return
         from wfp_auto_numbering import apply_heading_auto_numbering
-        apply_heading_auto_numbering(doc, headings, self._log)
+        # 编号符号要跟对应标题层级同一套字体，否则会继承正文/默认字体
+        level_fonts = {
+            1: (self.config.get('h1_font'), self.config.get('h1_size')),
+            2: (self.config.get('h2_font'), self.config.get('h2_size')),
+            3: (self.config.get('body_font'), self.config.get('body_size')),
+            4: (self.config.get('body_font'), self.config.get('body_size')),
+        }
+        apply_heading_auto_numbering(
+            doc, headings, self._log, level_fonts=level_fonts)
 
     def _format_heading(self, para, level):
         """

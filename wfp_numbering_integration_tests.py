@@ -25,7 +25,10 @@ class NumberingIntegrationTests(unittest.TestCase):
         self.source = self.root / 'input.docx'
         self.output = self.root / 'output.docx'
         self.logs = []
-        self.processor = WordProcessor(DEFAULT_CONFIG.copy(), self.logs.append)
+        config = DEFAULT_CONFIG.copy()
+        # 本套件验证的是"自动编号转文字"，标题自动编号会二次接管编号，关掉以隔离
+        config['auto_heading_numbering'] = False
+        self.processor = WordProcessor(config, self.logs.append)
         self.addCleanup(self.processor._cleanup_temp_files)
 
     def fixture(self, unsupported=False):
